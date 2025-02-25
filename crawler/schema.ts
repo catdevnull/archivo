@@ -17,4 +17,6 @@ export const crawlJobs = sqliteTable("crawl_jobs", {
     .default("pending"),
 
   createdAt: text().default(sql`(CURRENT_TIMESTAMP)`),
+  startedAt: integer({ mode: "timestamp_ms" }),
+  completedAt: integer({ mode: "timestamp_ms" }),
 });

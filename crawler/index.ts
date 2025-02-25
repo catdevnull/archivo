@@ -252,7 +252,7 @@ while (true) {
         pendingJobs.map((job) =>
           tx
             .update(crawlJobs)
-            .set({ status: "working" })
+            .set({ status: "working", startedAt: new Date() })
             .where(eq(crawlJobs.id, job.id))
         )
       );
@@ -340,6 +340,6 @@ async function crawl(job: typeof crawlJobs.$inferSelect) {
 
   await db
     .update(crawlJobs)
-    .set({ status: "completed" })
+    .set({ status: "completed", completedAt: new Date() })
     .where(eq(crawlJobs.id, job.id));
 }
