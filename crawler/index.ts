@@ -8,6 +8,146 @@ const db = drizzle(process.env.DATABASE_URL || "./db.sqlite");
 
 serve({
   routes: {
+    "/": {
+      GET: async (req) => {
+        try {
+          const crawls = await db.select().from(crawlJobs);
+
+          const crawlFiles = crawls.map((obj) => ({
+            id: obj.id,
+            url: obj.url,
+            status: obj.status,
+            createdAt: obj.createdAt,
+            waczUrl:
+              obj.status === "completed"
+                ? `https://${
+                    process.env.S3_BUCKET
+                  }.${process.env.S3_ENDPOINT?.replace(
+                    "https://",
+                    ""
+                  )}/crawls/${obj.id}/${obj.id}.wacz`
+                : null,
+          }));
+
+          const html = `
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Web Archive Crawls</title>
+            <style>
+              body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+              h1 { color: #333; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+              th { background-color: #f2f2f2; }
+              tr:hover { background-color: #f5f5f5; }
+              a { color: #0066cc; text-decoration: none; }
+              a:hover { text-decoration: underline; }
+              .size, .date { white-space: nowrap; }
+              .status-pending { color: #ff9900; }
+              .status-working { color: #0099cc; }
+              .status-completed { color: #00cc66; }
+              .status-failed { color: #cc0000; }
+            </style>
+          </head>
+          <body>
+            <h1>Web Archive Crawls</h1>
+            <p>Click on a completed archive to open it in ReplayWeb.page</p>
+            <form id="crawlForm" style="margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
+              <h2 style="margin-top: 0;">Start a New Crawl</h2>
+              <div style="margin-bottom: 15px;">
+                <label for="url" style="display: block; margin-bottom: 5px; font-weight: bold;">URL to Crawl:</label>
+                <input type="url" id="url" name="url" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                  placeholder="https://example.com">
+              </div>
+              <button type="submit" style="background-color: #0066cc; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer;">
+                Start Crawl
+              </button>
+              <p id="formStatus" style="margin-top: 10px; color: #666;"></p>
+            </form>
+            
+            <script>
+              document.getElementById('crawlForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const statusEl = document.getElementById('formStatus');
+                statusEl.textContent = 'Submitting crawl job...';
+                
+                try {
+                  const response = await fetch('/api/crawls', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      url: document.getElementById('url').value,
+                    }),
+                  });
+                  
+                  if (response.ok) {
+                    const result = await response.json();
+                    statusEl.textContent = \`Crawl job started! Job ID: \${result.id}\`;
+                    document.getElementById('url').value = '';
+                    setTimeout(() => { window.location.reload(); }, 1000);
+                  } else {
+                    const errorText = await response.text();
+                    statusEl.textContent = \`Error: \${errorText}\`;
+                  }
+                } catch (err) {
+                  statusEl.textContent = \`Error: \${err instanceof Error ? err.message : String(err)}\`;
+                }
+              });
+            </script>
+            <table>
+              <thead>
+                <tr>
+                  <th>Archive ID</th>
+                  <th>URL</th>
+                  <th>Status</th>
+                  <th>Created At</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  crawlFiles.length > 0
+                    ? crawlFiles
+                        .map(
+                          (file) => `
+                    <tr>
+                      <td>${
+                        file.waczUrl
+                          ? `<a href="https://replayweb.page/?source=${encodeURIComponent(
+                              file.waczUrl
+                            )}" target="_blank">${file.id}</a>`
+                          : file.id
+                      }</td>
+                      <td>${file.url}</td>
+                      <td class="status-${file.status}">${file.status}</td>
+                      <td class="date">${file.createdAt}</td>
+                    </tr>
+                  `
+                        )
+                        .join("")
+                    : '<tr><td colspan="4">No archives found</td></tr>'
+                }
+              </tbody>
+            </table>
+          </body>
+          </html>
+          `;
+
+          return new Response(html, {
+            headers: { "Content-Type": "text/html" },
+          });
+        } catch (error: any) {
+          console.error("Error serving index:", error);
+          return new Response("Error loading archives: " + error.message, {
+            status: 500,
+          });
+        }
+      },
+    },
     "/api/crawls": {
       GET: async (req) => {
         const jobs = await db.select().from(crawlJobs);
@@ -23,7 +163,7 @@ serve({
           })
           .returning();
 
-        return Response.json(job);
+        return Response.json(job[0]);
       },
     },
     "/api/crawls/:id": {
