@@ -30,7 +30,7 @@ serve({
 
           const crawlFiles = crawls.map((obj) => ({
             id: obj.id,
-            url: obj.url,
+            urls: obj.urls,
             status: obj.status,
             createdAt: obj.createdAt,
             waczUrl:
@@ -103,7 +103,7 @@ serve({
                       'Authorization': \`Bearer \${apiToken}\`
                     },
                     body: JSON.stringify({
-                      url: document.getElementById('url').value,
+                      urls: [document.getElementById('url').value],
                     }),
                   });
                   
@@ -135,7 +135,7 @@ serve({
               <thead>
                 <tr>
                   <th>Archive ID</th>
-                  <th>URL</th>
+                  <th>URLs</th>
                   <th>Status</th>
                   <th>Created At</th>
                 </tr>
@@ -154,7 +154,7 @@ serve({
                             )}" target="_blank">${file.id}</a>`
                           : file.id
                       }</td>
-                      <td>${file.url}</td>
+                      <td>${file.urls.join(", ")}</td>
                       <td class="status-${file.status}">${file.status}</td>
                       <td class="date">${file.createdAt}</td>
                     </tr>
@@ -193,10 +193,11 @@ serve({
           return new Response("Unauthorized", { status: 401 });
 
         const body = await req.json();
+        console.log({ body });
         const job = await db
           .insert(crawlJobs)
           .values({
-            url: body.url,
+            urls: body.urls,
             status: "pending",
           })
           .returning();
@@ -271,7 +272,7 @@ while (true) {
           .update(crawlJobs)
           .set({ status: "failed" })
           .where(eq(crawlJobs.id, job.id));
-        console.error(`failed to crawl ${job.id} (${job.url}):`, error);
+        console.error(`failed to crawl ${job.id} (${job.urls}):`, error);
       } finally {
         // Decrement active crawls when done
         activeCrawls--;
@@ -286,8 +287,14 @@ async function crawl(job: typeof crawlJobs.$inferSelect) {
   const crawlPath = join("crawls", job.id);
   await mkdir(crawlPath, { recursive: true });
 
+  const tempDir = join(crawlPath, "temp");
+  await mkdir(tempDir, { recursive: true });
+
   let profilePath = null;
-  if (job.url.includes("//x.com") || job.url.includes("//twitter.com")) {
+  if (
+    job.urls.some((url) => url.includes("//x.com")) ||
+    job.urls.some((url) => url.includes("//twitter.com"))
+  ) {
     const PATH = "profiles/profile.tar.gz";
     if (await exists(PATH)) {
       console.info(`[${job.id}] Using existing profile for Twitter...`);
@@ -295,18 +302,21 @@ async function crawl(job: typeof crawlJobs.$inferSelect) {
     }
   }
 
+  await write(join(tempDir, "links.txt"), job.urls.join("\n"));
+
   await $`docker run --rm -it \
   ${
     process.env.PROXY_URL ? `--env=PROXY_SERVER=${process.env.PROXY_URL}` : ""
   } \
   -v ./${crawlPath}:/crawls/ \
-  -v ./profiles:/profiles/ \
+  -v ./profiles:/crawls/profiles/ \
   --cpus=0.8 \
   --memory=1g \
-  webrecorder/browsertrix-crawler crawl --url ${job.url} \
+  webrecorder/browsertrix-crawler crawl \
+  --urlFile /crawls/temp/links.txt \
   --generateWACZ --scopeType page --diskUtilization 99 \
   --collection ${job.id} \
-  --profile /${profilePath}`;
+  ${profilePath ? `--profile=/${profilePath}` : ""}`;
 
   const outputPath = join(crawlPath, "collections", job.id);
 

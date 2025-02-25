@@ -7,7 +7,10 @@ export const crawlJobs = sqliteTable("crawl_jobs", {
     .primaryKey()
     .$defaultFn(() => nanoid()),
 
-  url: text().notNull(),
+  urls: text({ mode: "json" })
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'`),
 
   status: text({ enum: ["pending", "working", "completed", "failed"] })
     .notNull()
