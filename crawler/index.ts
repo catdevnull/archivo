@@ -233,9 +233,6 @@ while (true) {
   const availableSlots = MAX_CONCURRENT_CRAWLS - activeCrawls;
 
   if (availableSlots <= 0) {
-    console.info(
-      `[info] Maximum concurrent crawls (${MAX_CONCURRENT_CRAWLS}) reached. Waiting...`
-    );
     await new Promise((resolve) => setTimeout(resolve, 5000));
     continue;
   }
