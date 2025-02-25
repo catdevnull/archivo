@@ -6,6 +6,17 @@ import { join } from "node:path";
 import { $, s3, serve, write } from "bun";
 const db = drizzle(process.env.DATABASE_URL || "./db.sqlite");
 
+if (!process.env.API_TOKEN) {
+  console.warn(
+    "WARNING: API_TOKEN is not set in .env file. Using an insecure default token."
+  );
+}
+
+const validateApiToken = (req: Request) =>
+  req.headers.get("Authorization")?.replace("Bearer ", "") ===
+    process.env.API_TOKEN ||
+  new URL(req.url).searchParams.get("token") === process.env.API_TOKEN;
+
 serve({
   routes: {
     "/": {
@@ -62,6 +73,11 @@ serve({
                 <input type="url" id="url" name="url" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
                   placeholder="https://example.com">
               </div>
+              <div style="margin-bottom: 15px;">
+                <label for="apiToken" style="display: block; margin-bottom: 5px; font-weight: bold;">API Token:</label>
+                <input type="password" id="apiToken" name="apiToken" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
+                  placeholder="Enter your API token">
+              </div>
               <button type="submit" style="background-color: #0066cc; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer;">
                 Start Crawl
               </button>
@@ -73,12 +89,14 @@ serve({
                 e.preventDefault();
                 const statusEl = document.getElementById('formStatus');
                 statusEl.textContent = 'Submitting crawl job...';
+                const apiToken = document.getElementById('apiToken').value;
                 
                 try {
                   const response = await fetch('/api/crawls', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
+                      'Authorization': \`Bearer \${apiToken}\`
                     },
                     body: JSON.stringify({
                       url: document.getElementById('url').value,
@@ -89,6 +107,8 @@ serve({
                     const result = await response.json();
                     statusEl.textContent = \`Crawl job started! Job ID: \${result.id}\`;
                     document.getElementById('url').value = '';
+                    // Store the API token in session storage for future requests
+                    sessionStorage.setItem('apiToken', apiToken);
                     setTimeout(() => { window.location.reload(); }, 1000);
                   } else {
                     const errorText = await response.text();
@@ -96,6 +116,14 @@ serve({
                   }
                 } catch (err) {
                   statusEl.textContent = \`Error: \${err instanceof Error ? err.message : String(err)}\`;
+                }
+              });
+              
+              // Pre-fill API token from session storage if available
+              window.addEventListener('DOMContentLoaded', () => {
+                const savedToken = sessionStorage.getItem('apiToken');
+                if (savedToken) {
+                  document.getElementById('apiToken').value = savedToken;
                 }
               });
             </script>
@@ -150,10 +178,16 @@ serve({
     },
     "/api/crawls": {
       GET: async (req) => {
+        if (!validateApiToken(req))
+          return new Response("Unauthorized", { status: 401 });
+
         const jobs = await db.select().from(crawlJobs);
         return Response.json(jobs);
       },
       POST: async (req) => {
+        if (!validateApiToken(req))
+          return new Response("Unauthorized", { status: 401 });
+
         const body = await req.json();
         const job = await db
           .insert(crawlJobs)
@@ -168,6 +202,9 @@ serve({
     },
     "/api/crawls/:id": {
       GET: async (req) => {
+        if (!validateApiToken(req))
+          return new Response("Unauthorized", { status: 401 });
+
         const job = await db
           .select()
           .from(crawlJobs)
