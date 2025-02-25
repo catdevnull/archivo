@@ -291,6 +291,8 @@ async function crawl(job: typeof crawlJobs.$inferSelect) {
     process.env.PROXY_URL ? `--env=PROXY_SERVER=${process.env.PROXY_URL}` : ""
   } \
   -v ./${crawlPath}:/crawls/ \
+  --cpus=0.8 \
+  --memory=1g \
   webrecorder/browsertrix-crawler crawl --url ${job.url} \
   --generateWACZ --scopeType page --diskUtilization 99 \
   --collection ${job.id}`;
