@@ -6,6 +6,10 @@ import { join } from "node:path";
 import { $, s3, serve, write } from "bun";
 const db = drizzle(process.env.DATABASE_URL || "./db.sqlite");
 
+// Global limit for concurrent crawls
+const MAX_CONCURRENT_CRAWLS = 2;
+let activeCrawls = 0;
+
 if (!process.env.API_TOKEN) {
   console.warn(
     "WARNING: API_TOKEN is not set in .env file. Using an insecure default token."
@@ -216,12 +220,31 @@ serve({
 });
 
 while (true) {
+  // Check how many crawls are currently active
+  const workingJobs = await db
+    .select()
+    .from(crawlJobs)
+    .where(eq(crawlJobs.status, "working"));
+
+  activeCrawls = workingJobs.length;
+
+  // Only get new jobs if we're under the limit
+  const availableSlots = MAX_CONCURRENT_CRAWLS - activeCrawls;
+
+  if (availableSlots <= 0) {
+    console.info(
+      `[info] Maximum concurrent crawls (${MAX_CONCURRENT_CRAWLS}) reached. Waiting...`
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    continue;
+  }
+
   const jobs = await db.transaction(async (tx) => {
     const pendingJobs = await tx
       .select()
       .from(crawlJobs)
       .where(eq(crawlJobs.status, "pending"))
-      .limit(2);
+      .limit(availableSlots);
 
     if (pendingJobs.length > 0) {
       await Promise.all(
@@ -249,6 +272,9 @@ while (true) {
           .set({ status: "failed" })
           .where(eq(crawlJobs.id, job.id));
         console.error(`failed to crawl ${job.id} (${job.url}):`, error);
+      } finally {
+        // Decrement active crawls when done
+        activeCrawls--;
       }
     })();
   }
