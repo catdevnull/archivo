@@ -290,15 +290,16 @@ async function crawl(job: typeof crawlJobs.$inferSelect) {
   const tempDir = join(crawlPath, "temp");
   await mkdir(tempDir, { recursive: true });
 
-  let profilePath = null;
+  const profilePath = (name: string) => `profiles/${name}.tar.gz`;
+
+  let profileName = null;
   if (
     job.urls.some((url) => url.includes("//x.com")) ||
     job.urls.some((url) => url.includes("//twitter.com"))
   ) {
-    const PATH = "profiles/profile.tar.gz";
-    if (await exists(PATH)) {
+    if (await exists(profilePath("profile"))) {
       console.info(`[${job.id}] Using existing profile for Twitter...`);
-      profilePath = PATH;
+      profileName = "profile";
     }
   }
 
@@ -316,7 +317,7 @@ async function crawl(job: typeof crawlJobs.$inferSelect) {
   --urlFile /crawls/temp/links.txt \
   --generateWACZ --scopeType page --diskUtilization 99 \
   --collection ${job.id} \
-  ${profilePath ? `--profile=/${profilePath}` : ""}`;
+  ${profileName ? `--profile=/crawls/${profilePath(profileName)}` : ""}`;
 
   const outputPath = join(crawlPath, "collections", job.id);
 
