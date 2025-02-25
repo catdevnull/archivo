@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { crawlJobs } from "./schema";
 import { eq } from "drizzle-orm";
-import { mkdir, readdir, stat } from "node:fs/promises";
+import { exists, mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { $, s3, serve, write } from "bun";
 const db = drizzle(process.env.DATABASE_URL || "./db.sqlite");
@@ -286,16 +286,27 @@ async function crawl(job: typeof crawlJobs.$inferSelect) {
   const crawlPath = join("crawls", job.id);
   await mkdir(crawlPath, { recursive: true });
 
+  let profilePath = null;
+  if (job.url.includes("//x.com") || job.url.includes("//twitter.com")) {
+    const PATH = "profiles/profile.tar.gz";
+    if (await exists(PATH)) {
+      console.info(`[${job.id}] Using existing profile for Twitter...`);
+      profilePath = PATH;
+    }
+  }
+
   await $`docker run --rm -it \
   ${
     process.env.PROXY_URL ? `--env=PROXY_SERVER=${process.env.PROXY_URL}` : ""
   } \
   -v ./${crawlPath}:/crawls/ \
+  -v ./profiles:/profiles/ \
   --cpus=0.8 \
   --memory=1g \
   webrecorder/browsertrix-crawler crawl --url ${job.url} \
   --generateWACZ --scopeType page --diskUtilization 99 \
-  --collection ${job.id}`;
+  --collection ${job.id} \
+  --profile /${profilePath}`;
 
   const outputPath = join(crawlPath, "collections", job.id);
 
