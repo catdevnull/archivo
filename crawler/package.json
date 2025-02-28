@@ -2,15 +2,26 @@
   "name": "crawler",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "dev": "bun --hot run index.ts",
+    "start": "bun run index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "drizzle-kit": "^0.30.4"
   },
   "peerDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.7.3"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.66.9",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@uidotdev/usehooks": "^2.4.1",
     "drizzle-orm": "^0.39.3",
-    "nanoid": "^5.1.2"
+    "ky": "^1.7.5",
+    "nanoid": "^5.1.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   }
 }

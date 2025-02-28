@@ -1,9 +1,11 @@
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { crawlJobs } from "./schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { exists, mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { $, s3, serve, write } from "bun";
+import homepage from "./src/index.html";
+
 const db = drizzle(process.env.DATABASE_URL || "./db.sqlite");
 
 // Global limit for concurrent crawls
@@ -23,162 +25,13 @@ const validateApiToken = (req: Request) =>
 
 serve({
   routes: {
-    "/": {
-      GET: async (req) => {
-        try {
-          const crawls = await db.select().from(crawlJobs);
-
-          const crawlFiles = crawls.map((obj) => ({
-            id: obj.id,
-            urls: obj.urls,
-            status: obj.status,
-            createdAt: obj.createdAt,
-            waczUrl:
-              obj.status === "completed"
-                ? `https://${
-                    process.env.S3_BUCKET
-                  }.${process.env.S3_ENDPOINT?.replace(
-                    "https://",
-                    ""
-                  )}/crawls/${obj.id}/${obj.id}.wacz`
-                : null,
-          }));
-
-          const html = `
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Web Archive Crawls</title>
-            <style>
-              body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
-              h1 { color: #333; }
-              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-              th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-              th { background-color: #f2f2f2; }
-              tr:hover { background-color: #f5f5f5; }
-              a { color: #0066cc; text-decoration: none; }
-              a:hover { text-decoration: underline; }
-              .size, .date { white-space: nowrap; }
-              .status-pending { color: #ff9900; }
-              .status-working { color: #0099cc; }
-              .status-completed { color: #00cc66; }
-              .status-failed { color: #cc0000; }
-            </style>
-          </head>
-          <body>
-            <h1>Web Archive Crawls</h1>
-            <p>Click on a completed archive to open it in ReplayWeb.page</p>
-            <form id="crawlForm" style="margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
-              <h2 style="margin-top: 0;">Start a New Crawl</h2>
-              <div style="margin-bottom: 15px;">
-                <label for="url" style="display: block; margin-bottom: 5px; font-weight: bold;">URL to Crawl:</label>
-                <input type="url" id="url" name="url" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
-                  placeholder="https://example.com">
-              </div>
-              <div style="margin-bottom: 15px;">
-                <label for="apiToken" style="display: block; margin-bottom: 5px; font-weight: bold;">API Token:</label>
-                <input type="password" id="apiToken" name="apiToken" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" 
-                  placeholder="Enter your API token">
-              </div>
-              <button type="submit" style="background-color: #0066cc; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer;">
-                Start Crawl
-              </button>
-              <p id="formStatus" style="margin-top: 10px; color: #666;"></p>
-            </form>
-            
-            <script>
-              document.getElementById('crawlForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const statusEl = document.getElementById('formStatus');
-                statusEl.textContent = 'Submitting crawl job...';
-                const apiToken = document.getElementById('apiToken').value;
-                
-                try {
-                  const response = await fetch('/api/crawls', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': \`Bearer \${apiToken}\`
-                    },
-                    body: JSON.stringify({
-                      urls: [document.getElementById('url').value],
-                    }),
-                  });
-                  
-                  if (response.ok) {
-                    const result = await response.json();
-                    statusEl.textContent = \`Crawl job started! Job ID: \${result.id}\`;
-                    document.getElementById('url').value = '';
-                    // Store the API token in session storage for future requests
-                    sessionStorage.setItem('apiToken', apiToken);
-                    setTimeout(() => { window.location.reload(); }, 1000);
-                  } else {
-                    const errorText = await response.text();
-                    statusEl.textContent = \`Error: \${errorText}\`;
-                  }
-                } catch (err) {
-                  statusEl.textContent = \`Error: \${err instanceof Error ? err.message : String(err)}\`;
-                }
-              });
-              
-              // Pre-fill API token from session storage if available
-              window.addEventListener('DOMContentLoaded', () => {
-                const savedToken = sessionStorage.getItem('apiToken');
-                if (savedToken) {
-                  document.getElementById('apiToken').value = savedToken;
-                }
-              });
-            </script>
-            <table>
-              <thead>
-                <tr>
-                  <th>Archive ID</th>
-                  <th>URLs</th>
-                  <th>Status</th>
-                  <th>Created At</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${
-                  crawlFiles.length > 0
-                    ? crawlFiles
-                        .map(
-                          (file) => `
-                    <tr>
-                      <td>${
-                        file.waczUrl
-                          ? `<a href="https://replayweb.page/?source=${encodeURIComponent(
-                              file.waczUrl
-                            )}" target="_blank">${file.id}</a>`
-                          : file.id
-                      }</td>
-                      <td>${file.urls.join(", ")}</td>
-                      <td class="status-${file.status}">${file.status}</td>
-                      <td class="date">${file.createdAt}</td>
-                    </tr>
-                  `
-                        )
-                        .join("")
-                    : '<tr><td colspan="4">No archives found</td></tr>'
-                }
-              </tbody>
-            </table>
-          </body>
-          </html>
-          `;
-
-          return new Response(html, {
-            headers: { "Content-Type": "text/html" },
-          });
-        } catch (error: any) {
-          console.error("Error serving index:", error);
-          return new Response("Error loading archives: " + error.message, {
-            status: 500,
-          });
-        }
-      },
+    "/": homepage,
+    "/api/info": {
+      GET: async () =>
+        Response.json({
+          S3_BUCKET: process.env.S3_BUCKET,
+          S3_ENDPOINT: process.env.S3_ENDPOINT,
+        }),
     },
     "/api/crawls": {
       GET: async (req) => {
@@ -215,6 +68,25 @@ serve({
           .from(crawlJobs)
           .where(eq(crawlJobs.id, req.params.id));
         return Response.json(job);
+      },
+    },
+    "/api/public/jmilei-crawls": {
+      GET: async () => {
+        // Public endpoint that doesn't require auth
+        // Find crawls that include jmilei and x.com/twitter.com in the URLs
+        const jobs = await db
+          .select()
+          .from(crawlJobs)
+          .where(
+            sql`json_array_length(${crawlJobs.urls}) > 0 AND (
+              ${crawlJobs.urls} LIKE '%jmilei%' AND 
+              (${crawlJobs.urls} LIKE '%x.com%' OR ${crawlJobs.urls} LIKE '%twitter.com%')
+            )`
+          )
+          .orderBy(sql`${crawlJobs.createdAt} DESC`)
+          .limit(10);
+
+        return Response.json(jobs);
       },
     },
   },
