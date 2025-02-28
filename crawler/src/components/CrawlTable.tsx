@@ -79,7 +79,28 @@ export function CrawlTable({ jobs, isLoading }: CrawlTableProps) {
                     job.id
                   )}
                 </td>
-                <td>{job.urls.join(", ")}</td>
+                <td className="url-cell">
+                  <div className="url-container">
+                    {job.urls.length > 3 ? (
+                      <>
+                        {job.urls.slice(0, 3).map((url, idx) => (
+                          <div key={idx} className="truncate-url" title={url}>
+                            {url}
+                          </div>
+                        ))}
+                        <div className="more-urls">
+                          +{job.urls.length - 3} more URLs
+                        </div>
+                      </>
+                    ) : (
+                      job.urls.map((url, idx) => (
+                        <div key={idx} className="truncate-url" title={url}>
+                          {url}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </td>
                 <td className={`status-${job.status}`}>{job.status}</td>
                 <td className="date">{job.createdAt}</td>
               </tr>
