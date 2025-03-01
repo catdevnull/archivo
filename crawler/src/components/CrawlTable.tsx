@@ -37,7 +37,7 @@ export function CrawlTable({ jobs, isLoading }: CrawlTableProps) {
   }
 
   const url = (obj: CrawlJob) =>
-    obj.status === "completed"
+    info && obj.status === "completed"
       ? `https://${info.S3_BUCKET}.${info.S3_ENDPOINT?.replace(
           "https://",
           ""
