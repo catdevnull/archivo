@@ -181,7 +181,7 @@ async function crawl(job: typeof crawlJobs.$inferSelect) {
   -v ./${crawlPath}:/crawls/ \
   -v ./profiles:/crawls/profiles/ \
   --cpus=0.8 \
-  --memory=1g \
+  --memory=700m \
   webrecorder/browsertrix-crawler crawl \
   --urlFile /crawls/temp/links.txt \
   --generateWACZ --scopeType page --diskUtilization 99 \
