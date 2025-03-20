@@ -6,7 +6,9 @@ import { join } from "node:path";
 import { $, s3, serve, write } from "bun";
 import homepage from "./src/index.html";
 
-const db = drizzle(process.env.DATABASE_URL || "./db.sqlite");
+const db = drizzle(process.env.DATABASE_URL || "./db.sqlite", {
+  schema: { crawlJobs },
+});
 
 // Global limit for concurrent crawls
 const MAX_CONCURRENT_CRAWLS = 2;
@@ -91,6 +93,11 @@ serve({
     },
   },
 });
+
+await db
+  .update(crawlJobs)
+  .set({ status: "pending" })
+  .where(eq(crawlJobs.status, "working"));
 
 while (true) {
   // Check how many crawls are currently active
